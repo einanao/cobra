@@ -292,7 +292,7 @@ with st.form("my_form"):
     min_speedup = st.slider("minimum speedup per segment", min_value=0.5, max_value=5.0, value=1.0)
     max_speedup = st.slider("maximum speedup per segment", min_value=0.5, max_value=5.0, value=2.0)
     max_num_segments = st.slider(
-        "variance in speedup over time", min_value=2, max_value=100, value=20
+        "variance in speedup across segments", min_value=2, max_value=100, value=20
     )
     submitted = st.form_submit_button("submit")
     if min_speedup <= speedup_factor and speedup_factor <= max_speedup:
