@@ -238,7 +238,23 @@ def strike(url, speedup_factor, min_speedup, max_speedup, max_num_segments):
     data = [times, np.repeat(speedups, 2)]
     cols = ["time (minutes)", "speedup"]
     df = pd.DataFrame(list(zip(*data)), columns=cols)
-    st.line_chart(df, x=cols[0], y=cols[1])
+    min_actual_speedups = min(speedups)
+    max_actual_speedups = max(speedups)
+    eps = 0.1
+    lines = (
+        alt.Chart(df, title="speedup based on information rate")
+        .mark_line()
+        .encode(
+            x=cols[0],
+            y=alt.Y(
+                cols[1],
+                scale=alt.Scale(
+                    domain=(min_actual_speedups - eps, max_actual_speedups + eps)
+                ),
+            ),
+        )
+    )
+    st.altair_chart(lines.interactive(), use_container_width=True)
 
     return output_path
 
@@ -256,7 +272,11 @@ with st.form("my_form"):
     )
     submitted = st.form_submit_button("submit")
     if submitted:
-        output_path = strike(
-            url, speedup_factor, min_speedup, max_speedup, max_num_segments
-        )
+        st.write("original video:")
+        st.video(url)
+        with st.spinner("processing audio..."):
+            output_path = strike(
+                url, speedup_factor, min_speedup, max_speedup, max_num_segments
+            )
+        st.write("processed audio:")
         st.audio(output_path)
