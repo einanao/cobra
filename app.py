@@ -288,9 +288,9 @@ with st.form("my_form"):
     url = st.text_input(
         "youtube url", value="https://www.youtube.com/watch?v=_3MBQm7GFIM"
     )
-    speedup_factor = st.slider("speedup", min_value=0.5, max_value=5.0, value=1.5)
-    min_speedup = st.slider("minimum speedup", min_value=0.5, max_value=5.0, value=1.0)
-    max_speedup = st.slider("maximum speedup", min_value=0.5, max_value=5.0, value=2.0)
+    speedup_factor = st.slider("overall speedup for entire file", min_value=0.5, max_value=5.0, value=1.5)
+    min_speedup = st.slider("minimum speedup per segment", min_value=0.5, max_value=5.0, value=1.0)
+    max_speedup = st.slider("maximum speedup per segment", min_value=0.5, max_value=5.0, value=2.0)
     max_num_segments = st.slider(
         "variance in speedup over time", min_value=2, max_value=100, value=20
     )
