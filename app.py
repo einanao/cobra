@@ -164,9 +164,10 @@ def format_duration(duration):
 
 def strike(url, speedup_factor, min_speedup, max_speedup, max_num_segments):
 
-    min_speedup = max(0.5, min_speedup)  # ffmpeg limit
+    assert min_speedup >= 0.5  # ffmpeg limit
 
-    name = download(url, YDL_OPTS)
+    with st.spinner("downloading..."):
+        name = download(url, YDL_OPTS)
     assert name.endswith(".m4a")
     name = name.split(".m4a")[0].split("/")[-1]
 
@@ -174,13 +175,15 @@ def strike(url, speedup_factor, min_speedup, max_speedup, max_num_segments):
     transcript_path = os.path.join(DATA_DIR, "%s.json" % name)
     output_path = os.path.join(DATA_DIR, "%s_smooth.mp3" % name)
 
-    segments = transcribe(audio_path, transcript_path)
+    with st.spinner("transcribing..."):
+        segments = transcribe(audio_path, transcript_path)
 
     seg_durations = compute_seg_durations(segments)
 
-    info_densities = compute_info_densities(
-        segments, seg_durations, llm, tokenizer, device
-    )
+    with st.spinner("calculating information density..."):
+        info_densities = compute_info_densities(
+            segments, seg_durations, llm, tokenizer, device
+        )
 
     total_duration = segments[-1]["end"] - segments[0]["start"]
     min_sec_leaf = total_duration / max_num_segments
@@ -201,14 +204,8 @@ def strike(url, speedup_factor, min_speedup, max_speedup, max_num_segments):
         total_duration,
     )
 
-    cat_clips(squashed_times, speedups, audio_path, output_path)
-
-    spedup_total_duration, actual_speedup_factor = compute_actual_speedup(
-        squashed_durations, speedups, total_duration
-    )
-    st.write("original duration: %s" % format_duration(total_duration))
-    st.write("new duration: %s" % format_duration(spedup_total_duration))
-    st.write("speedup: %0.2f" % actual_speedup_factor)
+    with st.spinner("stitching segments..."):
+        cat_clips(squashed_times, speedups, audio_path, output_path)
 
     times = np.array([(seg["start"] + seg["end"]) / 2 for seg in segments])
     times /= 60
@@ -216,21 +213,30 @@ def strike(url, speedup_factor, min_speedup, max_speedup, max_num_segments):
     data = [times, info_densities / np.log(2), annotations]
     cols = ["time (minutes)", "bits per second", "transcript"]
     df = pd.DataFrame(list(zip(*data)), columns=cols)
-
+    min_time = segments[0]["start"] / 60
+    max_time = segments[-1]["end"] / 60
     lines = (
         alt.Chart(df, title="information rate")
         .mark_line(color="gray", opacity=0.5)
         .encode(
-            x=cols[0],
+            x=alt.X(cols[0], scale=alt.Scale(domain=(min_time, max_time))),
             y=cols[1],
         )
     )
     dots = (
         alt.Chart(df)
         .mark_circle(size=50, opacity=1)
-        .encode(x=cols[0], y=cols[1], tooltip=["transcript"])
+        .encode(
+            x=alt.X(cols[0], scale=alt.Scale(domain=(min_time, max_time))),
+            y=cols[1],
+            tooltip=["transcript"],
+        )
     )
     st.altair_chart((lines + dots).interactive(), use_container_width=True)
+    st.info("hover over the dots in the plot above this message to read the transcript")
+
+    st.write("sped-up audio:")
+    st.audio(output_path)
 
     times = sum([list(x) for x in squashed_times], [])
     times = np.array(times)
@@ -242,10 +248,10 @@ def strike(url, speedup_factor, min_speedup, max_speedup, max_num_segments):
     max_actual_speedups = max(speedups)
     eps = 0.1
     lines = (
-        alt.Chart(df, title="speedup based on information rate")
+        alt.Chart(df, title="adaptive speedup based on information rate")
         .mark_line()
         .encode(
-            x=cols[0],
+            x=alt.X(cols[0], scale=alt.Scale(domain=(min_time, max_time))),
             y=alt.Y(
                 cols[1],
                 scale=alt.Scale(
@@ -256,27 +262,67 @@ def strike(url, speedup_factor, min_speedup, max_speedup, max_num_segments):
     )
     st.altair_chart(lines.interactive(), use_container_width=True)
 
-    return output_path
 
+st.markdown(
+    """
+## cobra
+cobra stands for (co)nstant (b)it-(r)ate (a)udio.
+it's a tool for speeding up audio from podcasts and lectures.
+instead of applying the same speedup (like 1.5x) to the entire file,
+it applies a higher speedup to parts of the file with less information content
+, and a lower speedup to parts with higher information content.
+it measures information content using a language model.
+
+## usage
+1. enter a youtube url
+2. specify your desired overall speedup
+3. specify your minimum speedup. no segment of the file will be sped up slower than this.
+4. specify your maximum speedup. no segment of the file will be sped up faster than this.
+5. specify how much variance you'd like to see in the speedup over time (2 = constant speedup throughout the file, 100 = frequently-changing speedup)
+6. hit submit
+7. wait for the charts and processed audio to appear. it can take a while to download, transcribe, calculate information density, and stitch segments.
+"""
+)
 
 with st.form("my_form"):
     url = st.text_input(
         "youtube url", value="https://www.youtube.com/watch?v=_3MBQm7GFIM"
     )
-    speedup_factor = st.slider("speedup", min_value=1.0, max_value=10.0, value=1.5)
-    min_speedup = 1
-    max_speedup = st.slider("maximum speedup", min_value=1.0, max_value=10.0, value=2.0)
-    speedup_factor = min(speedup_factor, max_speedup)
+    speedup_factor = st.slider("speedup", min_value=0.5, max_value=5.0, value=1.5)
+    min_speedup = st.slider("minimum speedup", min_value=0.5, max_value=5.0, value=1.0)
+    max_speedup = st.slider("maximum speedup", min_value=0.5, max_value=5.0, value=2.0)
     max_num_segments = st.slider(
         "variance in speedup over time", min_value=2, max_value=100, value=20
     )
     submitted = st.form_submit_button("submit")
-    if submitted:
-        st.write("original video:")
-        st.video(url)
-        with st.spinner("processing audio..."):
-            output_path = strike(
-                url, speedup_factor, min_speedup, max_speedup, max_num_segments
-            )
-        st.write("processed audio:")
-        st.audio(output_path)
+    if min_speedup <= speedup_factor and speedup_factor <= max_speedup:
+        if submitted:
+            st.write("original video:")
+            st.video(url)
+            strike(url, speedup_factor, min_speedup, max_speedup, max_num_segments)
+    else:
+        st.error("speedup must be between min and max")
+
+st.markdown(
+    """
+## example
+"""
+)
+st.image(
+    "example.png",
+    caption="the information rate is lower in the first half of the video, when they are bs'ing and using buzzwords, so the speedup is higher. the information rate is higher in the second half of the video, when they walk through a concrete example of codex solving a challenging programming problem, so the speedup is lower.",
+)
+
+st.markdown(
+    """
+## algorithm
+1. download the audio of a youtube video (e.g., a podcast or lecture) using [youtube-dl](https://youtube-dl.org/)
+2. use [whisper](https://github.com/openai/whisper) to transcribe the audio into text
+3. use the [flan-t5](https://huggingface.co/docs/transformers/model_doc/flan-t5) language model to compute the negative log-likelihood of each text token given the previous tokens
+4. compute the information rate of each text segment in the transcript: negative log-likelihood of all tokens in segment divided by duration of segment
+5. fit a piecewise-constant function to the information rate vs. time data using a decision tree regression model from [scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.tree.DecisionTreeRegressor.html).  this lets us control the number of segments that will be stitched together in step 8, which can run slowly if the number of segments is too large.
+6. compute speedup for each segment: 1 / information rate (induces constant bit-rate over time)
+7. clip speedups with user's min and max, and use binary search to find linear scaling factor that matches the user's desired overall speedup
+8. apply scaled and clipped speedups to each segment, and stitch the segments together using [ffmpeg](https://ffmpeg.org/)
+"""
+)
