@@ -10,6 +10,7 @@ import torch
 import youtube_dl
 import pandas as pd
 import streamlit as st
+import altair as alt
 
 DATA_DIR = "./data"
 if not os.path.exists(DATA_DIR):
@@ -154,10 +155,6 @@ def cat_clips(seg_times, speedups, audio_path, output_path):
     cat.output(output_path).run()
 
 
-def format_data(data):
-    return np.concatenate([x[:, np.newaxis] for x in data], axis=1)
-
-
 def format_duration(duration):
     s = duration % 60
     m = duration // 60
@@ -214,15 +211,33 @@ def strike(url, speedup_factor, min_speedup, max_speedup, max_num_segments):
     st.write("speedup: %0.2f" % actual_speedup_factor)
 
     times = np.array([(seg["start"] + seg["end"]) / 2 for seg in segments])
-    data = [times / 60, info_densities / np.log(2)]
-    cols = ["time (minutes)", "information density (bits/second)"]
-    df = pd.DataFrame(format_data(data), columns=cols)
-    st.line_chart(df, x=cols[0], y=cols[1])
+    times /= 60
+    annotations = [seg["text"] for seg in segments]
+    data = [times, info_densities / np.log(2), annotations]
+    cols = ["time (minutes)", "bits per second", "transcript"]
+    df = pd.DataFrame(list(zip(*data)), columns=cols)
 
-    ts = sum([list(x) for x in squashed_times], [])
-    data = [np.array(ts) / 60, np.repeat(speedups, 2)]
+    lines = (
+        alt.Chart(df, title="information rate")
+        .mark_line(color="gray", opacity=0.5)
+        .encode(
+            x=cols[0],
+            y=cols[1],
+        )
+    )
+    dots = (
+        alt.Chart(df)
+        .mark_circle(size=50, opacity=1)
+        .encode(x=cols[0], y=cols[1], tooltip=["transcript"])
+    )
+    st.altair_chart((lines + dots).interactive(), use_container_width=True)
+
+    times = sum([list(x) for x in squashed_times], [])
+    times = np.array(times)
+    times /= 60
+    data = [times, np.repeat(speedups, 2)]
     cols = ["time (minutes)", "speedup"]
-    df = pd.DataFrame(format_data(data), columns=cols)
+    df = pd.DataFrame(list(zip(*data)), columns=cols)
     st.line_chart(df, x=cols[0], y=cols[1])
 
     return output_path

@@ -7,3 +7,4 @@ whisper @ git+https://github.com/openai/whisper.git@9f70a352f9f8630ab3aa0d06af5c
 youtube-dl==2021.12.17
 streamlit==1.14.0
 pandas==1.5.1
+altair==4.2.0
