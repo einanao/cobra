@@ -217,23 +217,33 @@ def strike(url, speedup_factor, min_speedup, max_speedup, max_num_segments):
     max_time = segments[-1]["end"] / 60
     lines = (
         alt.Chart(df, title="information rate")
-        .mark_line(color="gray", opacity=0.5)
+        .mark_line(color="gray")
         .encode(
             x=alt.X(cols[0], scale=alt.Scale(domain=(min_time, max_time))),
             y=cols[1],
         )
     )
-    dots = (
+    hover = alt.selection_single(
+        fields=cols[:1],
+        nearest=True,
+        on="mouseover",
+        empty="none",
+    )
+    points = lines.transform_filter(hover).mark_circle(size=65, color="orange")
+    tooltips = (
         alt.Chart(df)
-        .mark_circle(size=50, opacity=1)
+        .mark_rule(color="orange")
         .encode(
             x=alt.X(cols[0], scale=alt.Scale(domain=(min_time, max_time))),
             y=cols[1],
-            tooltip=["transcript"],
+            opacity=alt.condition(hover, alt.value(1), alt.value(0)),
+            tooltip=[alt.Tooltip("transcript", title="transcript")],
         )
+        .add_selection(hover)
     )
-    st.altair_chart((lines + dots).interactive(), use_container_width=True)
-    st.info("hover over the dots in the plot above this message to read the transcript")
+    chart = (lines + points + tooltips).interactive()
+    st.altair_chart(chart, use_container_width=True)
+    st.info("hover over the plot above this message to read the transcript")
 
     st.write("sped-up audio:")
     st.audio(output_path)
@@ -288,9 +298,15 @@ with st.form("my_form"):
     url = st.text_input(
         "youtube url", value="https://www.youtube.com/watch?v=_3MBQm7GFIM"
     )
-    speedup_factor = st.slider("overall speedup for entire file", min_value=0.5, max_value=5.0, value=1.5)
-    min_speedup = st.slider("minimum speedup per segment", min_value=0.5, max_value=5.0, value=1.0)
-    max_speedup = st.slider("maximum speedup per segment", min_value=0.5, max_value=5.0, value=2.0)
+    speedup_factor = st.slider(
+        "overall speedup for entire file", min_value=0.5, max_value=5.0, value=1.5
+    )
+    min_speedup = st.slider(
+        "minimum speedup per segment", min_value=0.5, max_value=5.0, value=1.0
+    )
+    max_speedup = st.slider(
+        "maximum speedup per segment", min_value=0.5, max_value=5.0, value=2.0
+    )
     max_num_segments = st.slider(
         "variance in speedup across segments", min_value=2, max_value=100, value=20
     )
